@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FabInvests India Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6 font-sans">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- Header -->
+    <header class="flex justify-between items-center border-b border-slate-800 pb-4">
+      <div>
+        <h1 class="text-2xl font-bold text-emerald-400">FabInvests India (NSE Paper Trader)</h1>
+        <p class="text-sm text-slate-400">Deterministic Intraday Execution & Regulatory Friction Engine</p>
+      </div>
+      <div id="market-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">
+        Checking Market...
+      </div>
+    </header>
+
+    <!-- Key Metrics -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <div class="text-slate-400 text-xs font-medium uppercase">Portfolio Value</div>
+        <div id="equity" class="text-2xl font-bold text-white mt-1">₹0.00</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <div class="text-slate-400 text-xs font-medium uppercase">Available Cash</div>
+        <div id="cash" class="text-2xl font-bold text-emerald-400 mt-1">₹0.00</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <div class="text-slate-400 text-xs font-medium uppercase">Active Positions</div>
+        <div id="active-count" class="text-2xl font-bold text-cyan-400 mt-1">0</div>
+      </div>
+    </div>
+
+    <!-- Active Positions Table -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <h2 class="text-lg font-semibold text-slate-200 mb-3">Open Holdings</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="text-xs text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="pb-2">Symbol</th>
+              <th class="pb-2">Qty</th>
+              <th class="pb-2">Avg Price</th>
+              <th class="pb-2">Entered At</th>
+            </tr>
+          </thead>
+          <tbody id="positions-body" class="divide-y divide-slate-800">
+            <tr><td colspan="4" class="py-4 text-center text-slate-500">No active positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <h2 class="text-lg font-semibold text-slate-200 mb-3">Execution Feed</h2>
+      <div id="logs" class="space-y-1 font-mono text-xs max-h-48 overflow-y-auto text-slate-400">
+        Waiting for next cycle...
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function updateDashboard() {
+      try {
+        const res = await fetch('/api/state');
+        const data = await res.json();
+
+        document.getElementById('equity').textContent = `₹${data.equity.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+        document.getElementById('cash').textContent = `₹${data.cash.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+        
+        const badge = document.getElementById('market-badge');
+        badge.textContent = `${data.marketStatus.reason}`;
+        badge.className = `px-3 py-1 rounded-full text-xs font-semibold ${data.marketStatus.open ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`;
+
+        const posKeys = Object.keys(data.positions || {});
+        document.getElementById('active-count').textContent = posKeys.length;
+
+        const tbody = document.getElementById('positions-body');
+        if (posKeys.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500">No active positions</td></tr>`;
+        } else {
+          tbody.innerHTML = posKeys.map(k => {
+            const p = data.positions[k];
+            return `<tr>
+              <td class="py-2 font-medium text-slate-200">${k}</td>
+              <td class="py-2 text-slate-300">${p.shares}</td>
+              <td class="py-2 text-slate-300">₹${p.buyPrice.toFixed(2)}</td>
+              <td class="py-2 text-slate-500 text-xs">${new Date(p.enteredAt).toLocaleTimeString()}</td>
+            </tr>`;
+          }).join('');
+        }
+
+        const logsDiv = document.getElementById('logs');
+        if (data.logs && data.logs.length) {
+          logsDiv.innerHTML = data.logs.map(l => `<div>${l}</div>`).join('');
+        }
+      } catch (err) {
+        console.error("Failed fetching status", err);
+      }
+    }
+    setInterval(updateDashboard, 3000);
+    updateDashboard();
+  </script>
+</body>
+</html>

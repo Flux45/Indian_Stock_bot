@@ -1,0 +1,32 @@
+{
+  "startingCapital": 50000,
+  "goal": 75000,
+  "currency": "INR",
+  "watchlist": [
+    { "symbol": "RELIANCE.NS", "name": "Reliance Industries", "sector": "Energy" },
+    { "symbol": "TCS.NS", "name": "Tata Consultancy Services", "sector": "IT" },
+    { "symbol": "HDFCBANK.NS", "name": "HDFC Bank", "sector": "Banking" },
+    { "symbol": "ICICIBANK.NS", "name": "ICICI Bank", "sector": "Banking" },
+    { "symbol": "INFY.NS", "name": "Infosys", "sector": "IT" },
+    { "symbol": "SBIN.NS", "name": "State Bank of India", "sector": "Banking" },
+    { "symbol": "BHARTIARTL.NS", "name": "Bharti Airtel", "sector": "Telecom" },
+    { "symbol": "TATAMOTORS.NS", "name": "Tata Motors", "sector": "Auto" }
+  ],
+  "fees": {
+    "brokerageFlat": 20,
+    "sttPct": 0.00025,
+    "exchangeTurnoverPct": 0.0000297,
+    "sebiTurnoverPct": 0.000001,
+    "stampDutyPct": 0.00003,
+    "gstPct": 0.18
+  },
+  "slippagePct": 0.0005,
+  "risk": {
+    "maxPositionPct": 0.25,
+    "minCashPct": 0.05,
+    "stopLossPct": 0.015,
+    "takeProfitPct": 0.035,
+    "intradayLeverage": 5
+  },
+  "loopSeconds": 30
+}
