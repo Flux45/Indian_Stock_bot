@@ -10,9 +10,86 @@ const PORT = process.env.PORT || 3000;
 const config = JSON.parse(fs.readFileSync('./config.json', 'utf-8'));
 const stateFile = './data/state.json';
 
+const markets = {
+  india: {
+    name: 'India (NSE)',
+    currency: 'INR',
+    currencySymbol: '₹',
+    locale: 'en-IN',
+    timeZone: 'Asia/Kolkata',
+    sessions: [[9 * 60 + 15, 15 * 60 + 30]],
+    watchlist: config.watchlist
+  },
+  us: {
+    name: 'United States (NYSE/Nasdaq)',
+    currency: 'USD',
+    currencySymbol: '$',
+    locale: 'en-US',
+    timeZone: 'America/New_York',
+    sessions: [[9 * 60 + 30, 16 * 60]],
+    watchlist: [
+      { symbol: 'AAPL', name: 'Apple', sector: 'Technology' },
+      { symbol: 'MSFT', name: 'Microsoft', sector: 'Technology' },
+      { symbol: 'NVDA', name: 'NVIDIA', sector: 'Semiconductors' },
+      { symbol: 'AMZN', name: 'Amazon', sector: 'Consumer' },
+      { symbol: 'TSLA', name: 'Tesla', sector: 'Automotive' }
+    ]
+  },
+  uk: {
+    name: 'United Kingdom (LSE)',
+    currency: 'GBP',
+    currencySymbol: '£',
+    locale: 'en-GB',
+    timeZone: 'Europe/London',
+    sessions: [[8 * 60, 16 * 60 + 30]],
+    watchlist: [
+      { symbol: 'SHEL.L', name: 'Shell', sector: 'Energy' },
+      { symbol: 'AZN.L', name: 'AstraZeneca', sector: 'Healthcare' },
+      { symbol: 'HSBA.L', name: 'HSBC', sector: 'Banking' },
+      { symbol: 'ULVR.L', name: 'Unilever', sector: 'Consumer' },
+      { symbol: 'VOD.L', name: 'Vodafone', sector: 'Telecom' }
+    ]
+  },
+  japan: {
+    name: 'Japan (TSE)',
+    currency: 'JPY',
+    currencySymbol: '¥',
+    locale: 'ja-JP',
+    timeZone: 'Asia/Tokyo',
+    sessions: [[9 * 60, 11 * 60 + 30], [12 * 60 + 30, 15 * 60 + 30]],
+    watchlist: [
+      { symbol: '7203.T', name: 'Toyota', sector: 'Automotive' },
+      { symbol: '6758.T', name: 'Sony', sector: 'Technology' },
+      { symbol: '9984.T', name: 'SoftBank Group', sector: 'Telecom' },
+      { symbol: '6861.T', name: 'Keyence', sector: 'Technology' },
+      { symbol: '8306.T', name: 'Mitsubishi UFJ', sector: 'Banking' }
+    ]
+  },
+  hongKong: {
+    name: 'Hong Kong (HKEX)',
+    currency: 'HKD',
+    currencySymbol: 'HK$',
+    locale: 'en-HK',
+    timeZone: 'Asia/Hong_Kong',
+    sessions: [[9 * 60 + 30, 12 * 60], [13 * 60, 16 * 60]],
+    watchlist: [
+      { symbol: '0700.HK', name: 'Tencent', sector: 'Technology' },
+      { symbol: '9988.HK', name: 'Alibaba', sector: 'Consumer' },
+      { symbol: '0005.HK', name: 'HSBC', sector: 'Banking' },
+      { symbol: '0941.HK', name: 'China Mobile', sector: 'Telecom' },
+      { symbol: '1299.HK', name: 'AIA Group', sector: 'Insurance' }
+    ]
+  }
+};
+
+const defaultMarket = config.defaultMarket && markets[config.defaultMarket]
+  ? config.defaultMarket
+  : 'india';
+
 const defaultConfig = {
   cash: config.startingCapital,
   equity: config.startingCapital,
+  selectedMarket: defaultMarket,
   positions: {},
   history: [],
   logs: []
@@ -33,6 +110,7 @@ function loadState() {
       const raw = fs.readFileSync(stateFile, 'utf-8').trim();
       if (raw.length > 0) {
         memoryState = JSON.parse(raw);
+        if (!markets[memoryState.selectedMarket]) memoryState.selectedMarket = defaultMarket;
         return memoryState;
       }
     }
@@ -62,22 +140,32 @@ function saveState(state) {
 loadState();
 
 // 1. Market Hours Guard (IST)
-function isMarketOpen() {
+function getSelectedMarket(state = loadState()) {
+  return markets[state.selectedMarket] || markets[defaultMarket];
+}
+
+function isMarketOpen(market = getSelectedMarket()) {
   const now = new Date();
   const istFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Kolkata',
+    timeZone: market.timeZone,
     hour12: false,
     weekday: 'short',
     hour: 'numeric',
     minute: 'numeric'
   });
   const parts = Object.fromEntries(istFormatter.formatToParts(now).map(p => [p.type, p.value]));
-  if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return { open: false, reason: 'Weekend' };
+  if (parts.weekday === 'Sat' || parts.weekday === 'Sun') {
+    return { open: false, reason: 'Weekend', timeZone: market.timeZone };
+  }
 
   const mins = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-  if (mins < 9 * 60 + 15) return { open: false, reason: 'Pre-market' };
-  if (mins >= 15 * 60 + 30) return { open: false, reason: 'Market Closed' };
-  return { open: true, reason: 'Live Regular Session' };
+  const session = market.sessions.find(([start, end]) => mins >= start && mins < end);
+  if (session) return { open: true, reason: 'Live Regular Session', timeZone: market.timeZone };
+  if (mins < market.sessions[0][0]) return { open: false, reason: 'Pre-market', timeZone: market.timeZone };
+  if (mins >= market.sessions[market.sessions.length - 1][1]) {
+    return { open: false, reason: 'Market Closed', timeZone: market.timeZone };
+  }
+  return { open: false, reason: 'Trading Break', timeZone: market.timeZone };
 }
 
 // 2. Regulatory Charges Calculator
@@ -108,15 +196,16 @@ async function fetchPrice(symbol) {
 
 // 4. Autonomous Trading Loop
 async function runBotCycle() {
-  const market = isMarketOpen();
   const state = loadState();
+  const selectedMarket = getSelectedMarket(state);
+  const market = isMarketOpen(selectedMarket);
   const timestamp = new Date().toISOString();
 
   let totalPositionValue = 0;
   const prices = {};
 
   // Update quotes & monitor existing positions
-  for (const item of config.watchlist) {
+  for (const item of selectedMarket.watchlist) {
     const price = await fetchPrice(item.symbol);
     if (!price) continue;
     prices[item.symbol] = price;
@@ -151,7 +240,7 @@ async function runBotCycle() {
 
   // Look for new entries during open market hours
   if (market.open) {
-    for (const item of config.watchlist) {
+    for (const item of selectedMarket.watchlist) {
       if (state.positions[item.symbol]) continue;
       const price = prices[item.symbol];
       if (!price) continue;
@@ -186,11 +275,48 @@ setInterval(runBotCycle, config.loopSeconds * 1000);
 
 // Web API
 app.use(express.static('public'));
+app.use(express.json());
+app.get('/api/markets', (req, res) => {
+  res.json(Object.entries(markets).map(([id, market]) => ({
+    id,
+    name: market.name,
+    currency: market.currency,
+    currencySymbol: market.currencySymbol,
+    timeZone: market.timeZone,
+    watchlist: market.watchlist
+  })));
+});
+app.post('/api/market', (req, res) => {
+  const { marketId } = req.body || {};
+  const state = loadState();
+
+  if (!markets[marketId]) return res.status(400).json({ error: 'Unsupported market' });
+  if (state.selectedMarket === marketId) return res.json({ selectedMarket: marketId });
+  if (Object.keys(state.positions).length > 0) {
+    return res.status(409).json({ error: 'Close all open positions before changing markets' });
+  }
+
+  state.selectedMarket = marketId;
+  saveState(state);
+  res.json({ selectedMarket: marketId });
+});
 app.get('/api/state', (req, res) => {
   const state = loadState();
-  res.json({ ...state, marketStatus: isMarketOpen() });
+  const market = getSelectedMarket(state);
+  res.json({
+    ...state,
+    market: {
+      name: market.name,
+      currency: market.currency,
+      currencySymbol: market.currencySymbol,
+      locale: market.locale,
+      timeZone: market.timeZone,
+      watchlist: market.watchlist
+    },
+    marketStatus: isMarketOpen(market)
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`FabInvests India running on http://localhost:${PORT}`);
+  console.log(`FabInvests multi-market bot running on http://localhost:${PORT}`);
 });

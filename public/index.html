@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>FabInvests India Dashboard</title>
+  <title>FabInvests Multi-Market Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen p-6 font-sans">
@@ -10,11 +10,17 @@
     <!-- Header -->
     <header class="flex justify-between items-center border-b border-slate-800 pb-4">
       <div>
-        <h1 class="text-2xl font-bold text-emerald-400">FabInvests India (NSE Paper Trader)</h1>
-        <p class="text-sm text-slate-400">Deterministic Intraday Execution & Regulatory Friction Engine</p>
+        <h1 class="text-2xl font-bold text-emerald-400">FabInvests Paper Trader</h1>
+        <p id="market-name" class="text-sm text-slate-400">Multi-market intraday execution engine</p>
       </div>
-      <div id="market-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">
-        Checking Market...
+      <div class="flex items-center gap-3">
+        <label for="market-select" class="text-xs uppercase text-slate-400">Market</label>
+        <select id="market-select" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400">
+          <option>Loading markets...</option>
+        </select>
+        <div id="market-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">
+          Checking Market...
+        </div>
       </div>
     </header>
 
@@ -64,13 +70,44 @@
   </div>
 
   <script>
+    const marketSelect = document.getElementById('market-select');
+
+    async function loadMarkets() {
+      const res = await fetch('/api/markets');
+      const markets = await res.json();
+      marketSelect.innerHTML = markets.map(market => `<option value="${market.id}">${market.name}</option>`).join('');
+    }
+
+    marketSelect.addEventListener('change', async () => {
+      marketSelect.disabled = true;
+      try {
+        const res = await fetch('/api/market', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ marketId: marketSelect.value })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Unable to change market');
+        await updateDashboard();
+      } catch (err) {
+        alert(err.message);
+        await updateDashboard();
+      } finally {
+        marketSelect.disabled = false;
+      }
+    });
+
     async function updateDashboard() {
       try {
         const res = await fetch('/api/state');
         const data = await res.json();
+        const currency = data.market.currencySymbol;
+        const numberFormat = { maximumFractionDigits: 2 };
 
-        document.getElementById('equity').textContent = `₹${data.equity.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-        document.getElementById('cash').textContent = `₹${data.cash.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+        marketSelect.value = data.selectedMarket;
+        document.getElementById('market-name').textContent = `${data.market.name} · ${data.market.timeZone}`;
+        document.getElementById('equity').textContent = `${currency}${data.equity.toLocaleString(data.market.locale, numberFormat)}`;
+        document.getElementById('cash').textContent = `${currency}${data.cash.toLocaleString(data.market.locale, numberFormat)}`;
         
         const badge = document.getElementById('market-badge');
         badge.textContent = `${data.marketStatus.reason}`;
@@ -88,7 +125,7 @@
             return `<tr>
               <td class="py-2 font-medium text-slate-200">${k}</td>
               <td class="py-2 text-slate-300">${p.shares}</td>
-              <td class="py-2 text-slate-300">₹${p.buyPrice.toFixed(2)}</td>
+              <td class="py-2 text-slate-300">${currency}${p.buyPrice.toFixed(2)}</td>
               <td class="py-2 text-slate-500 text-xs">${new Date(p.enteredAt).toLocaleTimeString()}</td>
             </tr>`;
           }).join('');
@@ -102,8 +139,8 @@
         console.error("Failed fetching status", err);
       }
     }
+    loadMarkets().then(updateDashboard).catch(err => console.error('Failed loading markets', err));
     setInterval(updateDashboard, 3000);
-    updateDashboard();
   </script>
 </body>
 </html>
