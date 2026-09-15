@@ -10,25 +10,56 @@ const PORT = process.env.PORT || 3000;
 const config = JSON.parse(fs.readFileSync('./config.json', 'utf-8'));
 const stateFile = './data/state.json';
 
-// Initialize state if not present
-if (!fs.existsSync('./data')) fs.mkdirSync('./data');
-if (!fs.existsSync(stateFile)) {
-  fs.writeFileSync(stateFile, JSON.stringify({
-    cash: config.startingCapital,
-    equity: config.startingCapital,
-    positions: {},
-    history: [],
-    logs: []
-  }, null, 2));
-}
+const defaultConfig = {
+  cash: config.startingCapital,
+  equity: config.startingCapital,
+  positions: {},
+  history: [],
+  logs: []
+};
+
+// In-memory state store to avoid read/write collisions
+let memoryState = null;
 
 function loadState() {
-  return JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+  if (memoryState) return memoryState;
+
+  if (!fs.existsSync('./data')) {
+    fs.mkdirSync('./data', { recursive: true });
+  }
+
+  try {
+    if (fs.existsSync(stateFile)) {
+      const raw = fs.readFileSync(stateFile, 'utf-8').trim();
+      if (raw.length > 0) {
+        memoryState = JSON.parse(raw);
+        return memoryState;
+      }
+    }
+  } catch (err) {
+    console.error("Corrupted state file detected. Re-initializing...", err.message);
+  }
+
+  // Fallback if file was empty, missing, or invalid JSON
+  memoryState = { ...defaultConfig };
+  saveState(memoryState);
+  return memoryState;
 }
 
 function saveState(state) {
-  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+  memoryState = state;
+  try {
+    // Atomic-like write: write to temp file then rename
+    const tempFile = `${stateFile}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(state, null, 2), 'utf-8');
+    fs.renameSync(tempFile, stateFile);
+  } catch (err) {
+    console.error("Failed to save state to disk:", err.message);
+  }
 }
+
+// Initial state load on startup
+loadState();
 
 // 1. Market Hours Guard (IST)
 function isMarketOpen() {
